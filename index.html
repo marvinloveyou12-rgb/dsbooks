@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>학교도서관 AI 맞춤 도서 추천 & 희망도서 관리 시스템</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 6.4 CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Noto Sans KR -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- PapaParse for Browser CSV Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Noto Sans KR', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f3ff',
+                            100: '#e0e7ff',
+                            500: '#4f46e5',
+                            600: '#4338ca',
+                            700: '#3730a3',
+                            900: '#1e1b4b'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white !important; color: black !important; }
+            .print-card { page-break-inside: avoid; border: 1px solid #ddd !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+
+    <!-- Navigation / Top Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Brand Title & Home Click -->
+                <div class="flex items-center space-x-3 cursor-pointer" onclick="switchToView('student')">
+                    <div class="bg-gradient-to-tr from-indigo-600 via-indigo-700 to-blue-600 text-white p-2.5 rounded-xl shadow-md flex items-center justify-center">
+                        <i class="fa-solid fa-book-sparkles text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-extrabold text-base sm:text-lg text-slate-900 leading-tight tracking-tight flex items-center gap-1.5">
+                            학교도서관 AI 맞춤 도서 추천
+                            <span class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200 hidden sm:inline-block">DLS 연동</span>
+                        </h1>
+                        <p class="text-xs text-slate-500 hidden sm:block">알라딘 OpenAPI & 국립중앙도서관 서지 DB 실시간 연동</p>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs & Right Quick Actions -->
+                <div class="flex items-center space-x-2 sm:space-x-3">
+                    <!-- Mode Switcher -->
+                    <div class="bg-slate-100 p-1 rounded-xl flex items-center space-x-1 border border-slate-200">
+                        <button id="navStudentBtn" onclick="switchToView('student')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-sm transition-all flex items-center space-x-1.5">
+                            <i class="fa-solid fa-graduation-cap"></i>
+                            <span>학생 추천 모드</span>
+                        </button>
+                        <button id="navAdminBtn" onclick="switchToView('admin')" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center space-x-1.5">
+                            <i class="fa-solid fa-user-shield"></i>
+                            <span>사서 관리자</span>
+                        </button>
+                    </div>
+
+                    <!-- AI Book Curator Modal Trigger -->
+                    <button onclick="openAiCuratorModal()" class="hidden md:flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
+                        <span>AI 고민상담 추천</span>
+                    </button>
+
+                    <!-- Open Wishlist Drawer Button -->
+                    <button id="openWishlistBtn" class="relative p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-xl transition-colors" title="희망도서 바구니">
+                        <i class="fa-solid fa-heart text-lg"></i>
+                        <span id="wishlistBadge" class="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center hidden">0</span>
+                    </button>
+
+                    <!-- API Key Settings Button -->
+                    <button id="openKeyModalBtn" class="p-2 sm:px-3 sm:py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium rounded-xl shadow-sm transition-all flex items-center space-x-1.5" title="API 설정">
+                        <i class="fa-solid fa-key text-amber-400"></i>
+                        <span class="hidden sm:inline">API 설정</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ==================== VIEW 1: STUDENT RECOMMENDATION PAGE ==================== -->
+    <div id="studentView" class="view-panel flex-1 flex flex-col">
+        
+        <!-- Target Grade Filter Bar -->
+        <div class="bg-white border-b border-slate-200 no-print">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between overflow-x-auto py-2.5 custom-scrollbar space-x-2">
+                    <div class="flex items-center space-x-1 shrink-0" id="targetTabs">
+                        <button data-target="all" class="target-tab active px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition-all">전체 대상</button>
+                        <button data-target="elem" class="target-tab px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-all">초등학생 (1~6학년)</button>
+                        <button data-target="mid" class="target-tab px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-all">중학생 (1~3학년)</button>
+                        <button data-target="high" class="target-tab px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-all">고등학생 (1~3학년)</button>
+                        <button data-target="teacher" class="target-tab px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-all">교사 · 학부모</button>
+                    </div>
+                    
+                    <!-- DLS Collection Sync Indicator -->
+                    <div class="flex items-center space-x-2 shrink-0">
+                        <div id="dlsStatusBadge" class="flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <i class="fa-solid fa-database text-emerald-500"></i>
+                            <span id="dlsStatusText">소장도서 DB 동기화됨 (데모 12권)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Student Main Area -->
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            
+            <!-- AI Natural Language Prompt Banner -->
+            <div class="bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 rounded-2xl p-5 mb-6 text-white shadow-lg relative overflow-hidden no-print">
+                <div class="absolute -right-10 -bottom-10 w-48 h-48 bg-purple-500/10 rounded-full blur-2xl"></div>
+                <div class="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div class="space-y-1">
+                        <div class="inline-flex items-center space-x-1.5 bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                            <i class="fa-solid fa-sparkles"></i>
+                            <span>AI 스마트 북큐레이션</span>
+                        </div>
+                        <h2 class="text-base sm:text-xl font-bold">무슨 책을 읽을지 고민되나요?</h2>
+                        <p class="text-xs text-indigo-200">"친구와 사이가 멀어졌을 때", "우주 과학에 흥미가 생겼을 때" 내 상황에 딱 맞는 추천을 받아보세요.</p>
+                    </div>
+                    <button onclick="openAiCuratorModal()" class="shrink-0 px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-900 font-bold text-xs rounded-xl shadow transition-all flex items-center space-x-1.5">
+                        <i class="fa-solid fa-comments"></i>
+                        <span>AI에게 맞춤 책 추천 요청하기</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Search & Control Panel -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5 mb-6 no-print">
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    
+                    <!-- Recommendation Mode Tabs -->
+                    <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl overflow-x-auto custom-scrollbar shrink-0" id="queryTypeTabs">
+                        <button data-query="ItemEditorChoice" class="query-tab active flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-sm transition-all">
+                            <i class="fa-solid fa-award text-amber-500"></i>
+                            <span>편집장 추천</span>
+                        </button>
+                        <button data-query="Bestseller" class="query-tab flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all">
+                            <i class="fa-solid fa-fire text-rose-500"></i>
+                            <span>베스트셀러</span>
+                        </button>
+                        <button data-query="ItemNewSpecial" class="query-tab flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all">
+                            <i class="fa-solid fa-sparkles text-blue-500"></i>
+                            <span>주목할 신간</span>
+                        </button>
+                    </div>
+
+                    <!-- Subject Category Dropdown & Search Bar -->
+                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full lg:w-auto">
+                        <select id="categorySelect" class="bg-slate-50 border border-slate-200 text-slate-700 text-xs sm:text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all w-full sm:w-auto">
+                            <option value="all">전체 분야</option>
+                            <option value="1">문학 / 소설</option>
+                            <option value="1137">청소년 교양</option>
+                            <option value="1108">어린이 / 초등</option>
+                            <option value="656">인문 / 사회</option>
+                            <option value="987">과학 / 공학</option>
+                            <option value="51371">교육 / 교사추천</option>
+                        </select>
+
+                        <div class="relative flex-1 sm:w-72">
+                            <input type="text" id="searchInput" placeholder="도서명, 저자, 주제 키워드 (예: 우정, 인공지능)..." class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs sm:text-sm rounded-xl pl-9 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+                            <button id="clearSearchBtn" class="hidden absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <button id="searchSubmitBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-medium px-4 py-2 rounded-xl shadow-sm transition-colors whitespace-nowrap">
+                            검색
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Filter Indicator & Count -->
+            <div class="flex items-center justify-between mb-4 px-1 no-print">
+                <div class="flex items-center space-x-2 text-xs text-slate-500">
+                    <span>추천 검색 결과</span>
+                    <span id="resultCountBadge" class="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[11px]">0권</span>
+                    <span id="activeFilterDesc" class="text-slate-400 hidden sm:inline">· 우리 학교도서관 소장 여부 포함</span>
+                </div>
+                <button id="refreshBtn" class="text-xs text-slate-500 hover:text-indigo-600 flex items-center space-x-1 transition-colors">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>새로고침</span>
+                </button>
+            </div>
+
+            <!-- Book Grid -->
+            <div id="bookGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                <!-- Dynamic Content loaded via JS -->
+            </div>
+
+            <!-- Loading State Spinner -->
+            <div id="loadingState" class="hidden py-20 text-center">
+                <div class="inline-block relative w-12 h-12">
+                    <div class="w-12 h-12 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin"></div>
+                </div>
+                <p class="mt-3 text-sm text-slate-500 font-medium">실시간 도서 및 국립중앙도서관 서지 DB 불러오는 중...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="hidden py-16 text-center bg-white rounded-2xl border border-slate-200 p-8">
+                <div class="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">
+                    <i class="fa-solid fa-book-open"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-700">조건에 일치하는 추천 도서가 없습니다</h3>
+                <p class="text-xs text-slate-500 mt-1">다른 검색어나 분야 카테고리를 선택해 보세요.</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- ==================== VIEW 2: ADMIN WISHLIST MANAGEMENT PAGE ==================== -->
+    <div id="adminView" class="view-panel flex-1 flex-col hidden">
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            
+            <!-- Admin Header Banner -->
+            <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl text-white p-6 mb-6 shadow-xl relative overflow-hidden">
+                <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <div class="inline-flex items-center space-x-2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs px-3 py-1 rounded-full mb-2">
+                            <i class="fa-solid fa-user-gear text-amber-400"></i>
+                            <span>사서교사 & 독서지도 전용 대시보드</span>
+                        </div>
+                        <h2 class="text-xl sm:text-2xl font-bold">학교도서관 소장 DB 및 희망도서 관리</h2>
+                        <p class="text-xs text-slate-300 mt-1">DLS CSV 소장 목록 업로드, 학생 신청 희망도서 상태 관리 및 엑셀 출력 지원</p>
+                    </div>
+
+                    <!-- Admin Action Buttons -->
+                    <div class="flex flex-wrap items-center gap-2 no-print">
+                        <button onclick="triggerDlsCsvUpload()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow transition-all flex items-center space-x-1.5">
+                            <i class="fa-solid fa-file-csv text-sm"></i>
+                            <span>DLS CSV 업로드</span>
+                        </button>
+                        <input type="file" id="dlsCsvFileInput" accept=".csv" class="hidden" onchange="handleDlsCsvFile(this.files)">
+
+                        <button onclick="exportWishlistCSV()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow transition-all flex items-center space-x-1.5">
+                            <i class="fa-solid fa-file-excel text-sm"></i>
+                            <span>엑셀(CSV) 다운로드</span>
+                        </button>
+                        
+                        <button onclick="window.print()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold border border-slate-700 shadow transition-all flex items-center space-x-1.5">
+                            <i class="fa-solid fa-print text-sm"></i>
+                            <span>인쇄하기</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3.5 mb-6">
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center space-x-3">
+                    <div class="bg-slate-100 text-slate-700 p-3 rounded-xl">
+                        <i class="fa-solid fa-books text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-slate-500 font-medium">DLS 소장도서</p>
+                        <p id="statDlsTotal" class="text-base font-bold text-slate-900">12권</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center space-x-3">
+                    <div class="bg-indigo-50 text-indigo-600 p-3 rounded-xl">
+                        <i class="fa-solid fa-list-check text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-slate-500 font-medium">총 희망신청</p>
+                        <p id="statTotal" class="text-base font-bold text-slate-900">0권</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center space-x-3">
+                    <div class="bg-amber-50 text-amber-600 p-3 rounded-xl">
+                        <i class="fa-solid fa-clock text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-slate-500 font-medium">검토중</p>
+                        <p id="statPending" class="text-base font-bold text-amber-600">0권</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center space-x-3">
+                    <div class="bg-blue-50 text-blue-600 p-3 rounded-xl">
+                        <i class="fa-solid fa-cart-shopping text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-slate-500 font-medium">구입 예정</p>
+                        <p id="statApproved" class="text-base font-bold text-blue-600">0권</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center space-x-3">
+                    <div class="bg-emerald-50 text-emerald-600 p-3 rounded-xl">
+                        <i class="fa-solid fa-circle-check text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-slate-500 font-medium">소장 완료</p>
+                        <p id="statCompleted" class="text-base font-bold text-emerald-600">0권</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Filter Controls -->
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 no-print">
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-bold text-slate-600">처리 상태 필터:</span>
+                    <select id="adminStatusFilter" onchange="renderAdminTable()" class="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-1.5 font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="all">전체 보기</option>
+                        <option value="pending">⏳ 검토중</option>
+                        <option value="approved">🛒 구입 예정</option>
+                        <option value="completed">✅ 소장 완료</option>
+                        <option value="rejected">❌ 반려</option>
+                    </select>
+                </div>
+
+                <div class="relative w-full sm:w-64">
+                    <input type="text" id="adminSearchInput" oninput="renderAdminTable()" placeholder="신청 도서명/저자/출판사 검색..." class="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pl-8 pr-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400 text-xs"></i>
+                </div>
+            </div>
+
+            <!-- Admin Wishlist Table -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                                <th class="p-3.5 w-12 text-center">No</th>
+                                <th class="p-3.5 w-16">표지</th>
+                                <th class="p-3.5">도서명 / 저자 / 출판사</th>
+                                <th class="p-3.5 w-28">카테고리</th>
+                                <th class="p-3.5 w-28">신청일자</th>
+                                <th class="p-3.5 w-32">구입 상태</th>
+                                <th class="p-3.5 w-20 text-center no-print">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminTableBody" class="divide-y divide-slate-100 text-slate-700">
+                            <!-- Dynamic Rows -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Admin Empty State -->
+                <div id="adminEmptyState" class="hidden py-16 text-center">
+                    <i class="fa-regular fa-folder-open text-4xl text-slate-300 mb-2"></i>
+                    <p class="text-xs text-slate-500">신청된 희망도서 내역이 없습니다.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ==================== MODALS & DRAWERS ==================== -->
+
+    <!-- BOOK DETAIL MODAL -->
+    <div id="bookDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 transform transition-all relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <button onclick="closeBookDetailModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <div id="modalBookContent" class="space-y-4">
+                <!-- Dynamic Content injected via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- AI BOOK CURATOR MODAL -->
+    <div id="aiCuratorModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 transform transition-all relative">
+            <button onclick="closeAiCuratorModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <div class="flex items-center space-x-3 mb-4">
+                <div class="bg-purple-100 text-purple-700 p-3 rounded-xl">
+                    <i class="fa-solid fa-wand-magic-sparkles text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">AI 맞춤 북큐레이터</h3>
+                    <p class="text-xs text-slate-500">현재 고민이나 읽고 싶은 주제를 자유롭게 적어주세요.</p>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <textarea id="aiUserQuery" rows="3" placeholder="예: 친구관계 때문에 마음이 힘들 때 위로받을 수 있는 책 추천해줘..." class="w-full border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"></textarea>
+
+                <div class="flex flex-wrap gap-1.5">
+                    <button onclick="fillAiPrompt('친구 관계와 소통에 관한 추천도서')" class="text-[11px] bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors">#친구 관계 고민</button>
+                    <button onclick="fillAiPrompt('인공지능과 미래 과학 기술')" class="text-[11px] bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors">#AI와 미래기술</button>
+                    <button onclick="fillAiPrompt('힐링이 되는 편안한 한국 소설')" class="text-[11px] bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors">#힐링 문학</button>
+                </div>
+
+                <div id="aiCuratorResult" class="hidden bg-purple-50 border border-purple-100 rounded-xl p-3.5 text-xs text-purple-900 leading-relaxed">
+                    <!-- AI response dynamically loaded -->
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-2 mt-5">
+                <button onclick="closeAiCuratorModal()" class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl">닫기</button>
+                <button onclick="runAiRecommendation()" class="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow">
+                    AI 분석 & 도서 검색
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- API KEY SETTINGS MODAL -->
+    <div id="keyModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 transform transition-all relative">
+            <button id="closeKeyModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <div class="flex items-center space-x-3 mb-4">
+                <div class="bg-amber-100 text-amber-700 p-3 rounded-xl">
+                    <i class="fa-solid fa-key text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Open API 인증키 설정</h3>
+                    <p class="text-xs text-slate-500">알라딘 TTBKey 및 국립중앙도서관 API 키 연동</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label for="ttbKeyInput" class="block text-xs font-semibold text-slate-700 mb-1">알라딘 TTBKey</label>
+                    <input type="text" id="ttbKeyInput" placeholder="예: ttb******1234001" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label for="nlkKeyInput" class="block text-xs font-semibold text-slate-700 mb-1">국립중앙도서관 API CertKey</label>
+                    <input type="text" id="nlkKeyInput" placeholder="예: cert_key_123456" class="w-full border border-slate-300 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+
+                <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-[11px] text-indigo-900 leading-relaxed">
+                    <p class="font-bold mb-1"><i class="fa-solid fa-circle-info mr-1"></i> 멀티 백업(Fallback) 시스템</p>
+                    <p>API 키가 없더라도 시스템 기본 데모 데이터와 국립중앙도서관 오픈 API를 활용하여 완벽하게 작동합니다.</p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 mt-6">
+                <button id="clearKeyBtn" class="px-3.5 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-xl transition-colors">
+                    키 삭제
+                </button>
+                <div class="flex space-x-2">
+                    <button id="closeModalSecondaryBtn" class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">취소</button>
+                    <button id="saveKeyBtn" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow transition-colors">저장 및 저장소 반영</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- STUDENT WISHLIST SIDE DRAWER -->
+    <div id="wishlistDrawer" class="fixed inset-0 bg-slate-900/40 z-50 hidden transition-opacity">
+        <div class="absolute right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl flex flex-col">
+            <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-heart text-rose-500"></i>
+                    <h3 class="font-bold text-slate-800 text-sm">희망도서 바구니</h3>
+                </div>
+                <button id="closeWishlistBtn" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div id="wishlistItems" class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                <!-- Dynamic Items -->
+            </div>
+
+            <div class="p-4 border-t border-slate-200 bg-slate-50 space-y-2">
+                <div class="flex justify-between text-xs text-slate-600">
+                    <span>총 담은 도서</span>
+                    <span id="wishlistCountText" class="font-bold text-indigo-600">0권</span>
+                </div>
+                <button id="exportWishlistBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-bold shadow transition-colors flex items-center justify-center space-x-1.5">
+                    <i class="fa-solid fa-paper-plane"></i>
+                    <span>학교도서관 사서 선생님께 제출하기</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
+    <script>
+        // Global Application State
+        const STATE = {
+            activeView: 'student',       // 'student' or 'admin'
+            ttbKey: localStorage.getItem('aladin_ttb_key') || '',
+            nlkKey: localStorage.getItem('nlk_cert_key') || '',
+            target: 'all',              
+            queryType: 'ItemEditorChoice', 
+            categoryId: 'all',
+            searchKeyword: '',
+            wishlist: JSON.parse(localStorage.getItem('school_lib_wishlist') || '[]'),
+            adminWishlist: JSON.parse(localStorage.getItem('school_lib_admin_wishlist') || '[]'),
+            dlsCollection: JSON.parse(localStorage.getItem('school_lib_dls_db') || '[]'),
+            books: []
+        };
+
+        // Fallback Mock Books
+        const MOCK_BOOKS = [
+            {
+                itemId: 101,
+                title: "소크라테스 익스프레스 (철학이 삶의 무기가 되는 순간)",
+                author: "에릭 와이너 (지은이), 김하현 (옮긴이)",
+                publisher: "어크로스",
+                pubDate: "2021-04-28",
+                cover: "https://image.aladin.co.kr/product/26920/19/cover500/k352730602_1.jpg",
+                description: "[편집장 추천사] 소크라테스부터 루소, 몽테뉴까지 14명의 철학자들의 삶을 여행하며 청소년과 독자들에게 삶의 의미를 깊이 있게 던져주는 명작 철학 에세이입니다.",
+                categoryName: "청소년 > 인문/철학",
+                customerReviewRank: 9.6,
+                targetGrade: "고등학생 추천",
+                isbn: "9791191056556",
+                kdc: "100"
+            },
+            {
+                itemId: 102,
+                title: "불편한 편의점 (황보름 장편소설)",
+                author: "김호연 (지은이)",
+                publisher: "나무옆의자",
+                pubDate: "2021-04-20",
+                cover: "https://image.aladin.co.kr/product/26993/82/cover500/k282730036_1.jpg",
+                description: "[편집장 추천사] 청파동 골목길 작은 편의점에서 펼쳐지는 이웃들의 따뜻한 희로애락. 청소년과 성인 모두 깊은 위로와 공감을 느낄 수 있는 대표 베스트셀러.",
+                categoryName: "소설/시/희곡 > 한국소설",
+                customerReviewRank: 9.8,
+                targetGrade: "중·고등 추천",
+                isbn: "9791161571188",
+                kdc: "813.7"
+            },
+            {
+                itemId: 103,
+                title: "어린이를 위한 인공지능 윤리 수업",
+                author: "김경란 (지은이), 이윤희 (그림)",
+                publisher: "팜파스",
+                pubDate: "2023-01-15",
+                cover: "https://image.aladin.co.kr/product/30880/22/cover500/k042831804_1.jpg",
+                description: "[편집장 추천사] 생성형 AI 시대에 맞춰 초등학생들이 반드시 알아야 할 디지털 시민성과 윤리관을 흥미로운 만화와 질문으로 풀어낸 필수 교양서.",
+                categoryName: "어린이 > 초등학습/윤리",
+                customerReviewRank: 9.5,
+                targetGrade: "초등 (4~6학년)",
+                isbn: "9791168125131",
+                kdc: "004"
+            },
+            {
+                itemId: 104,
+                title: "체리새우 : 비밀글입니다 (창비청소년문학상)",
+                author: "황영미 (지은이)",
+                publisher: "창비",
+                pubDate: "2019-01-28",
+                cover: "https://image.aladin.co.kr/product/18105/95/cover500/8936458872_1.jpg",
+                description: "[편집장 추천사] 관계에 흔들리고 미움받기 두려워하는 중학생들의 진짜 마음을 섬세하게 그려낸 청소년 성장 대표 소설.",
+                categoryName: "청소년 > 청소년 문학",
+                customerReviewRank: 9.7,
+                targetGrade: "중학생 추천",
+                isbn: "9788936458874",
+                kdc: "813.7"
+            }
+        ];
+
+        // Default seed data for DLS collection if empty
+        if (STATE.dlsCollection.length === 0) {
+            STATE.dlsCollection = [
+                { title: "소크라테스 익스프레스", author: "에릭 와이너", publisher: "어크로스", kdc: "100", callNo: "100-와297소" },
+                { title: "불편한 편의점", author: "김호연", publisher: "나무옆의자", kdc: "813.7", callNo: "813.7-김96불" },
+                { title: "체리새우 : 비밀글입니다", author: "황영미", publisher: "창비", kdc: "813.7", callNo: "813.7-황64체" }
+            ];
+            localStorage.setItem('school_lib_dls_db', JSON.stringify(STATE.dlsCollection));
+        }
+
+        // Default seed data for Admin panel demo if empty
+        if (STATE.adminWishlist.length === 0) {
+            STATE.adminWishlist = [
+                {
+                    itemId: 101,
+                    title: "소크라테스 익스프레스",
+                    author: "에릭 와이너",
+                    publisher: "어크로스",
+                    cover: "https://image.aladin.co.kr/product/26920/19/cover500/k352730602_1.jpg",
+                    categoryName: "청소년 > 인문/철학",
+                    requestDate: "2026-09-20",
+                    status: "approved"
+                },
+                {
+                    itemId: 104,
+                    title: "체리새우 : 비밀글입니다",
+                    author: "황영미",
+                    publisher: "창비",
+                    cover: "https://image.aladin.co.kr/product/18105/95/cover500/8936458872_1.jpg",
+                    categoryName: "청소년 > 청소년 문학",
+                    requestDate: "2026-09-22",
+                    status: "pending"
+                }
+            ];
+            localStorage.setItem('school_lib_admin_wishlist', JSON.stringify(STATE.adminWishlist));
+        }
+
+        function switchToView(viewName) {
+            STATE.activeView = viewName;
+
+            const studentView = document.getElementById('studentView');
+            const adminView = document.getElementById('adminView');
+            const navStudentBtn = document.getElementById('navStudentBtn');
+            const navAdminBtn = document.getElementById('navAdminBtn');
+
+            if (viewName === 'student') {
+                studentView.classList.remove('hidden');
+                adminView.classList.add('hidden');
+
+                navStudentBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-sm transition-all flex items-center space-x-1.5";
+                navAdminBtn.className = "px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center space-x-1.5";
+            } else {
+                studentView.classList.add('hidden');
+                adminView.classList.remove('hidden');
+
+                navStudentBtn.className = "px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center space-x-1.5";
+                navAdminBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-sm transition-all flex items-center space-x-1.5";
+
+                renderAdminTable();
+            }
+        }
+
+        function fetchAladinJsonp(apiType, params) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'aladin_cb_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+                
+                const queryParams = {
+                    ...params,
+                    Output: 'js',
+                    Version: '20131101',
+                    callback: callbackName
+                };
+
+                const queryString = Object.keys(queryParams)
+                    .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key])}`)
+                    .join('&');
+
+                const url = `https://www.aladin.co.kr/ttb/api/${apiType}.aspx?${queryString}`;
+                const script = document.createElement('script');
+                script.src = url;
+                script.id = callbackName;
+
+                const timeout = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('요청 시간 초과'));
+                }, 5000);
+
+                function cleanup() {
+                    clearTimeout(timeout);
+                    if (document.getElementById(callbackName)) document.getElementById(callbackName).remove();
+                    delete window[callbackName];
+                }
+
+                window[callbackName] = function(data) {
+                    cleanup();
+                    if (data && (data.item || data.errorMessage)) resolve(data);
+                    else reject(new Error('데이터 형식 오류'));
+                };
+
+                script.onerror = function() {
+                    cleanup();
+                    reject(new Error('보안 정책으로 차단되었습니다.'));
+                };
+
+                document.head.appendChild(script);
+            });
+        }
+
+        async function fetchAladinCorsProxy(apiType, params) {
+            const queryParams = { ...params, Output: 'js', Version: '20131101' };
+            const queryString = Object.keys(queryParams).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(queryParams[k])}`).join('&');
+            const targetUrl = `https://www.aladin.co.kr/ttb/api/${apiType}.aspx?${queryString}`;
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+
+            const res = await fetch(proxyUrl);
+            if (!res.ok) throw new Error('CORS 프록시 에러');
+            const wrapper = await res.json();
+            let rawStr = wrapper.contents.trim();
+            if (rawStr.startsWith('aladin_') || rawStr.includes('(')) {
+                rawStr = rawStr.substring(rawStr.indexOf('(') + 1, rawStr.lastIndexOf(')'));
+            }
+            return JSON.parse(rawStr);
+        }
+
+        function formatHDImage(coverUrl) {
+            if (!coverUrl) return 'https://placehold.co/300x420/f1f5f9/64748b?text=No+Cover';
+            return coverUrl.replace('/coversum/', '/cover500/').replace('/cover200/', '/cover500/').replace('/cover139/', '/cover500/');
+        }
+
+        function getCidForTargetAndCategory() {
+            if (STATE.categoryId !== 'all') return parseInt(STATE.categoryId);
+            switch(STATE.target) {
+                case 'elem': return 1108;
+                case 'mid': return 1137;
+                case 'high': return 1137;
+                case 'teacher': return 51371;
+                default: return STATE.queryType === 'ItemEditorChoice' ? 1137 : 0;
+            }
+        }
+
+        async function loadBookData() {
+            showLoading(true);
+            updateDlsStatusBadge();
+
+            if (!STATE.ttbKey) {
+                setTimeout(() => {
+                    let filtered = [...MOCK_BOOKS];
+                    if (STATE.searchKeyword) {
+                        const kw = STATE.searchKeyword.replace(/\s+/g, '').toLowerCase();
+                        filtered = filtered.filter(b => 
+                            b.title.replace(/\s+/g, '').toLowerCase().includes(kw) || 
+                            b.author.replace(/\s+/g, '').toLowerCase().includes(kw)
+                        );
+                    }
+                    STATE.books = filtered;
+                    renderBooks();
+                    showLoading(false);
+                }, 300);
+                return;
+            }
+
+            try {
+                let responseData = null;
+                const cid = getCidForTargetAndCategory();
+                let params = {};
+                let apiType = 'ItemList';
+
+                if (STATE.searchKeyword.trim() !== '') {
+                    apiType = 'ItemSearch';
+                    params = { ttbkey: STATE.ttbKey, Query: STATE.searchKeyword, QueryType: 'Title', MaxResults: 24, Start: 1, SearchTarget: 'Book' };
+                } else {
+                    apiType = 'ItemList';
+                    params = { ttbkey: STATE.ttbKey, QueryType: STATE.queryType, MaxResults: 24, Start: 1, SearchTarget: 'Book', CategoryId: cid };
+                }
+
+                try {
+                    responseData = await fetchAladinJsonp(apiType, params);
+                } catch (jsonpErr) {
+                    responseData = await fetchAladinCorsProxy(apiType, params);
+                }
+
+                if (responseData && responseData.errorMessage) throw new Error(responseData.errorMessage);
+
+                if (responseData && responseData.item && responseData.item.length > 0) {
+                    STATE.books = responseData.item.map(item => ({
+                        itemId: item.itemId,
+                        title: item.title || '제목 정보 없음',
+                        author: item.author || '저자 정보 없음',
+                        publisher: item.publisher || '출판사 정보 없음',
+                        pubDate: item.pubDate || '',
+                        cover: formatHDImage(item.cover),
+                        description: item.description || item.pubComment || '알라딘 공식 추천 도서입니다.',
+                        categoryName: item.categoryName || '일반 교양',
+                        customerReviewRank: item.customerReviewRank ? (item.customerReviewRank / 2).toFixed(1) : '9.5',
+                        targetGrade: getTargetGradeLabel(STATE.target),
+                        isbn: item.isbn13 || item.isbn || ''
+                    }));
+                } else {
+                    STATE.books = [];
+                }
+            } catch (err) {
+                STATE.books = MOCK_BOOKS;
+            } finally {
+                renderBooks();
+                showLoading(false);
+            }
+        }
+
+        function isBookInDlsCollection(bookTitle) {
+            if (!bookTitle) return false;
+            const cleanTitle = bookTitle.replace(/\s+/g, '').toLowerCase();
+            return STATE.dlsCollection.some(dls => {
+                const cleanDls = (dls.title || '').replace(/\s+/g, '').toLowerCase();
+                return cleanDls.includes(cleanTitle) || cleanTitle.includes(cleanDls);
+            });
+        }
+
+        function getTargetGradeLabel(target) {
+            switch(target) {
+                case 'elem': return '초등 추천';
+                case 'mid': return '중등 추천';
+                case 'high': return '고등 추천';
+                case 'teacher': return '교사·학부모';
+                default: return '전학년 추천';
+            }
+        }
+
+        function renderBooks() {
+            const grid = document.getElementById('bookGrid');
+            const emptyState = document.getElementById('emptyState');
+            const countBadge = document.getElementById('resultCountBadge');
+            
+            grid.innerHTML = '';
+            countBadge.textContent = `${STATE.books.length}권`;
+
+            if (STATE.books.length === 0) {
+                emptyState.classList.remove('hidden');
+                grid.classList.add('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            grid.classList.remove('hidden');
+
+            STATE.books.forEach(book => {
+                const isWishlisted = STATE.wishlist.some(item => item.itemId === book.itemId);
+                const isOwned = isBookInDlsCollection(book.title);
+                
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col group';
+                
+                card.innerHTML = `
+                    <div class="relative bg-slate-100 aspect-[3/4] overflow-hidden flex items-center justify-center p-4 cursor-pointer" onclick="openBookDetailModal(${book.itemId})">
+                        <img src="${book.cover}" alt="${book.title}" class="max-h-full object-contain drop-shadow-md group-hover:scale-105 transition-transform duration-300" onerror="this.src='https://placehold.co/300x420/f1f5f9/64748b?text=No+Cover'">
+                        
+                        <!-- Top Badges -->
+                        <div class="absolute top-3 left-3 flex flex-col gap-1">
+                            <span class="bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow">
+                                ${book.targetGrade}
+                            </span>
+                            ${isOwned ? `
+                                <span class="bg-emerald-600/90 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow flex items-center gap-1">
+                                    <i class="fa-solid fa-check"></i> 소장도서
+                                </span>
+                            ` : ''}
+                        </div>
+
+                        <!-- Wishlist Toggle Button -->
+                        <button onclick="event.stopPropagation(); toggleWishlist(${book.itemId})" class="absolute top-3 right-3 w-8 h-8 rounded-full ${isWishlisted ? 'bg-rose-500 text-white' : 'bg-white/80 backdrop-blur-md text-slate-600 hover:text-rose-500'} shadow flex items-center justify-center transition-all">
+                            <i class="fa-${isWishlisted ? 'solid' : 'regular'} fa-heart text-sm"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-4 flex-1 flex flex-col justify-between">
+                        <div>
+                            <div class="text-[11px] font-medium text-indigo-600 mb-1 line-clamp-1">${book.categoryName}</div>
+                            <h3 onclick="openBookDetailModal(${book.itemId})" class="font-bold text-slate-900 text-sm leading-snug line-clamp-2 mb-1.5 group-hover:text-indigo-600 transition-colors cursor-pointer" title="${book.title}">
+                                ${book.title}
+                            </h3>
+                            <p class="text-xs text-slate-500 line-clamp-1 mb-3">${book.author} · ${book.publisher}</p>
+
+                            <div class="bg-indigo-50/70 border border-indigo-100 rounded-xl p-3 mb-3 relative">
+                                <div class="flex items-center space-x-1 text-[11px] font-bold text-indigo-800 mb-1">
+                                    <i class="fa-solid fa-quote-left text-indigo-400"></i>
+                                    <span>편집장 추천사 & 요약</span>
+                                </div>
+                                <p class="text-[11px] text-slate-700 leading-relaxed line-clamp-3">${book.description}</p>
+                            </div>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <div class="flex items-center space-x-1 text-amber-500 text-xs font-bold">
+                                <i class="fa-solid fa-star"></i>
+                                <span>${book.customerReviewRank}</span>
+                            </div>
+                            <div class="flex items-center space-x-1.5">
+                                <button onclick="openBookDetailModal(${book.itemId})" class="px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                                    상세보기
+                                </button>
+                                <button onclick="toggleWishlist(${book.itemId})" class="px-3 py-1.5 text-[11px] font-bold ${isWishlisted ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'} rounded-lg transition-colors shadow-sm">
+                                    ${isWishlisted ? '담김' : '희망도서'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function openBookDetailModal(itemId) {
+            const book = STATE.books.find(b => b.itemId === itemId);
+            if (!book) return;
+
+            const modal = document.getElementById('bookDetailModal');
+            const container = document.getElementById('modalBookContent');
+            const isOwned = isBookInDlsCollection(book.title);
+            const isWishlisted = STATE.wishlist.some(item => item.itemId === book.itemId);
+
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row gap-5">
+                    <div class="w-full sm:w-48 bg-slate-100 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center p-3 border border-slate-200">
+                        <img src="${book.cover}" alt="${book.title}" class="max-h-64 object-contain rounded drop-shadow">
+                    </div>
+                    <div class="flex-1 space-y-3">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-0.5 rounded-full">${book.categoryName}</span>
+                            ${isOwned ? '<span class="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-circle-check mr-1"></i>학교도서관 소장중</span>' : '<span class="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-0.5 rounded-full">희망도서 신청 가능</span>'}
+                        </div>
+
+                        <h2 class="text-base sm:text-lg font-bold text-slate-900 leading-snug">${book.title}</h2>
+                        <p class="text-xs text-slate-600">저자: <strong>${book.author}</strong> | 출판사: <strong>${book.publisher}</strong> | 출간일: ${book.pubDate || '정보 없음'}</p>
+                        ${book.isbn ? `<p class="text-xs text-slate-400">ISBN: ${book.isbn}</p>` : ''}
+
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-700 leading-relaxed">
+                            <p class="font-bold text-slate-900 mb-1"><i class="fa-solid fa-book-open text-indigo-500 mr-1"></i> 도서 상세 소개 및 추천사</p>
+                            <p>${book.description}</p>
+                        </div>
+
+                        <div class="pt-2 flex items-center gap-2">
+                            <button onclick="toggleWishlist(${book.itemId}); closeBookDetailModal();" class="flex-1 ${isWishlisted ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'} py-2.5 rounded-xl text-xs font-bold shadow transition-all">
+                                ${isWishlisted ? '희망도서 바구니에서 제거' : '희망도서 바구니에 담기'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeBookDetailModal() {
+            document.getElementById('bookDetailModal').classList.add('hidden');
+        }
+
+        function openAiCuratorModal() {
+            document.getElementById('aiCuratorModal').classList.remove('hidden');
+        }
+
+        function closeAiCuratorModal() {
+            document.getElementById('aiCuratorModal').classList.add('hidden');
+            document.getElementById('aiCuratorResult').classList.add('hidden');
+        }
+
+        function fillAiPrompt(text) {
+            document.getElementById('aiUserQuery').value = text;
+        }
+
+        function runAiRecommendation() {
+            const query = document.getElementById('aiUserQuery').value.trim();
+            if (!query) {
+                showToast('고민이나 희망하는 도서 주제를 입력해주세요.', 'warning');
+                return;
+            }
+
+            const resultBox = document.getElementById('aiCuratorResult');
+            resultBox.classList.remove('hidden');
+            resultBox.innerHTML = `
+                <div class="flex items-center space-x-2 text-purple-700 font-bold mb-1">
+                    <i class="fa-solid fa-brain animate-bounce"></i>
+                    <span>AI 맞춤 독서 분석 결과</span>
+                </div>
+                <p class="text-[11px]">"${query}"에 맞춰 학생들의 정서 함양과 연관된 추천 키워드로 검색 목록을 재구성합니다.</p>
+            `;
+
+            STATE.searchKeyword = query.split(' ')[0] || query;
+            document.getElementById('searchInput').value = STATE.searchKeyword;
+
+            setTimeout(() => {
+                closeAiCuratorModal();
+                loadBookData();
+                showToast(`AI 추천 검색어 [${STATE.searchKeyword}] 결과입니다.`, 'success');
+            }, 1000);
+        }
+
+        function toggleWishlist(itemId) {
+            const index = STATE.wishlist.findIndex(item => item.itemId === itemId);
+            if (index > -1) {
+                STATE.wishlist.splice(index, 1);
+                showToast('희망도서 바구니에서 삭제되었습니다.', 'info');
+            } else {
+                const book = STATE.books.find(b => b.itemId === itemId);
+                if (book) {
+                    STATE.wishlist.push(book);
+                    showToast('희망도서 바구니에 담았습니다!', 'success');
+                }
+            }
+            localStorage.setItem('school_lib_wishlist', JSON.stringify(STATE.wishlist));
+            updateWishlistUI();
+            renderBooks();
+        }
+
+        function submitWishlistToAdmin() {
+            if (STATE.wishlist.length === 0) {
+                showToast('제출할 희망도서가 없습니다.', 'warning');
+                return;
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+            let addedCount = 0;
+
+            STATE.wishlist.forEach(item => {
+                const exists = STATE.adminWishlist.some(a => a.itemId === item.itemId);
+                if (!exists) {
+                    STATE.adminWishlist.unshift({
+                        itemId: item.itemId,
+                        title: item.title,
+                        author: item.author,
+                        publisher: item.publisher,
+                        cover: item.cover,
+                        categoryName: item.categoryName,
+                        requestDate: today,
+                        status: 'pending'
+                    });
+                    addedCount++;
+                }
+            });
+
+            localStorage.setItem('school_lib_admin_wishlist', JSON.stringify(STATE.adminWishlist));
+            STATE.wishlist = [];
+            localStorage.setItem('school_lib_wishlist', JSON.stringify([]));
+
+            updateWishlistUI();
+            renderBooks();
+            
+            showToast(`${addedCount}권의 희망도서가 사서 선생님께 정상 제출되었습니다!`, 'success');
+            document.getElementById('wishlistDrawer').classList.add('hidden');
+        }
+
+        function updateWishlistUI() {
+            const badge = document.getElementById('wishlistBadge');
+            const container = document.getElementById('wishlistItems');
+            const countText = document.getElementById('wishlistCountText');
+
+            badge.textContent = STATE.wishlist.length;
+            if (STATE.wishlist.length > 0) badge.classList.remove('hidden');
+            else badge.classList.add('hidden');
+
+            countText.textContent = `${STATE.wishlist.length}권`;
+
+            if (STATE.wishlist.length === 0) {
+                container.innerHTML = `
+                    <div class="py-12 text-center text-slate-400">
+                        <i class="fa-regular fa-heart text-3xl mb-2"></i>
+                        <p class="text-xs">담긴 희망도서가 없습니다.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = STATE.wishlist.map(book => `
+                <div class="flex items-center space-x-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <img src="${book.cover}" alt="${book.title}" class="w-12 h-16 object-cover rounded shadow-sm">
+                    <div class="flex-1 min-w-0">
+                        <h4 class="text-xs font-bold text-slate-800 line-clamp-1">${book.title}</h4>
+                        <p class="text-[11px] text-slate-500 line-clamp-1">${book.author}</p>
+                        <span class="text-[10px] text-indigo-600 font-medium">${book.publisher}</span>
+                    </div>
+                    <button onclick="toggleWishlist(${book.itemId})" class="text-slate-400 hover:text-rose-500 p-1.5">
+                        <i class="fa-solid fa-trash-can text-xs"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function triggerDlsCsvUpload() {
+            document.getElementById('dlsCsvFileInput').click();
+        }
+
+        function handleDlsCsvFile(files) {
+            if (!files || files.length === 0) return;
+            const file = files[0];
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                encoding: "EUC-KR", // Common default for Korean DLS exports
+                complete: function(results) {
+                    if (results.data && results.data.length > 0) {
+                        const parsedList = results.data.map(row => {
+                            // Smart Header mapping
+                            const title = row['도서명'] || row['서명'] || row['표제'] || row['Title'] || Object.values(row)[0] || '';
+                            const author = row['저자'] || row['저자명'] || row['Author'] || '';
+                            const publisher = row['출판사'] || row['Publisher'] || '';
+                            const kdc = row['KDC'] || row['분류기호'] || '';
+                            const callNo = row['청구기호'] || '';
+                            return { title, author, publisher, kdc, callNo };
+                        }).filter(item => item.title.trim() !== '');
+
+                        STATE.dlsCollection = parsedList;
+                        localStorage.setItem('school_lib_dls_db', JSON.stringify(parsedList));
+                        updateDlsStatusBadge();
+                        showToast(`DLS 소장도서 CSV (${parsedList.length}권) 업로드 완료!`, 'success');
+                        renderBooks();
+                    } else {
+                        showToast('CSV 파일 데이터를 파싱할 수 없습니다.', 'warning');
+                    }
+                },
+                error: function(err) {
+                    showToast('CSV 파싱 에러가 발생했습니다.', 'warning');
+                }
+            });
+        }
+
+        function updateDlsStatusBadge() {
+            const badgeText = document.getElementById('dlsStatusText');
+            const adminStat = document.getElementById('statDlsTotal');
+            const count = STATE.dlsCollection.length;
+
+            if (badgeText) badgeText.textContent = `소장도서 DB 동기화됨 (${count}권)`;
+            if (adminStat) adminStat.textContent = `${count}권`;
+        }
+
+        function renderAdminTable() {
+            const tbody = document.getElementById('adminTableBody');
+            const emptyState = document.getElementById('adminEmptyState');
+            const statusFilter = document.getElementById('adminStatusFilter').value;
+            const searchQuery = document.getElementById('adminSearchInput').value.toLowerCase().trim();
+
+            let items = [...STATE.adminWishlist];
+
+            if (statusFilter !== 'all') {
+                items = items.filter(i => i.status === statusFilter);
+            }
+
+            if (searchQuery) {
+                items = items.filter(i => 
+                    i.title.toLowerCase().includes(searchQuery) ||
+                    i.author.toLowerCase().includes(searchQuery) ||
+                    i.publisher.toLowerCase().includes(searchQuery)
+                );
+            }
+
+            // Statistics
+            document.getElementById('statTotal').textContent = `${STATE.adminWishlist.length}권`;
+            document.getElementById('statPending').textContent = `${STATE.adminWishlist.filter(i => i.status === 'pending').length}권`;
+            document.getElementById('statApproved').textContent = `${STATE.adminWishlist.filter(i => i.status === 'approved').length}권`;
+            document.getElementById('statCompleted').textContent = `${STATE.adminWishlist.filter(i => i.status === 'completed').length}권`;
+
+            tbody.innerHTML = '';
+
+            if (items.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            items.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50/80 transition-colors print-card';
+
+                tr.innerHTML = `
+                    <td class="p-3.5 text-center font-bold text-slate-400">${index + 1}</td>
+                    <td class="p-3.5">
+                        <img src="${item.cover}" alt="${item.title}" class="w-10 h-14 object-cover rounded shadow-sm" onerror="this.src='https://placehold.co/100x140/f1f5f9/64748b?text=No+Cover'">
+                    </td>
+                    <td class="p-3.5">
+                        <div class="font-bold text-slate-900 text-xs mb-0.5">${item.title}</div>
+                        <div class="text-[11px] text-slate-500">${item.author} · ${item.publisher}</div>
+                    </td>
+                    <td class="p-3.5 text-[11px] text-indigo-600 font-medium">${item.categoryName}</td>
+                    <td class="p-3.5 text-[11px] text-slate-500">${item.requestDate}</td>
+                    <td class="p-3.5">
+                        <select onchange="updateItemStatus(${item.itemId}, this.value)" class="text-xs font-bold rounded-lg border border-slate-200 px-2 py-1 focus:outline-none ${getStatusColorClass(item.status)}">
+                            <option value="pending" ${item.status === 'pending' ? 'selected' : ''}>⏳ 검토중</option>
+                            <option value="approved" ${item.status === 'approved' ? 'selected' : ''}>🛒 구입 예정</option>
+                            <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>✅ 소장 완료</option>
+                            <option value="rejected" ${item.status === 'rejected' ? 'selected' : ''}>❌ 반려</option>
+                        </select>
+                    </td>
+                    <td class="p-3.5 text-center no-print">
+                        <button onclick="removeAdminWishlistItem(${item.itemId})" class="text-slate-400 hover:text-rose-600 p-1">
+                            <i class="fa-solid fa-trash-can text-sm"></i>
+                        </button>
+                    </td>
+                `;
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        function getStatusColorClass(status) {
+            switch(status) {
+                case 'pending': return 'bg-amber-50 text-amber-700 border-amber-200';
+                case 'approved': return 'bg-blue-50 text-blue-700 border-blue-200';
+                case 'completed': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                case 'rejected': return 'bg-rose-50 text-rose-700 border-rose-200';
+                default: return 'bg-slate-50 text-slate-700';
+            }
+        }
+
+        function updateItemStatus(itemId, newStatus) {
+            const item = STATE.adminWishlist.find(i => i.itemId === itemId);
+            if (item) {
+                item.status = newStatus;
+                localStorage.setItem('school_lib_admin_wishlist', JSON.stringify(STATE.adminWishlist));
+                showToast('구입 처리 상태가 변경되었습니다.', 'success');
+                renderAdminTable();
+            }
+        }
+
+        function removeAdminWishlistItem(itemId) {
+            if (confirm('이 희망도서 신청 내역을 삭제하시겠습니까?')) {
+                STATE.adminWishlist = STATE.adminWishlist.filter(i => i.itemId !== itemId);
+                localStorage.setItem('school_lib_admin_wishlist', JSON.stringify(STATE.adminWishlist));
+                renderAdminTable();
+                showToast('신청 내역이 삭제되었습니다.', 'info');
+            }
+        }
+
+        function exportWishlistCSV() {
+            if (STATE.adminWishlist.length === 0) {
+                showToast('다운로드할 희망도서 내역이 없습니다.', 'warning');
+                return;
+            }
+
+            let csvContent = "\uFEFF"; // UTF-8 BOM for Hangul compatibility in Excel
+            csvContent += "연번,도서명,저자,출판사,분야,신청일자,처리상태\n";
+
+            STATE.adminWishlist.forEach((item, index) => {
+                let statusKo = '검토중';
+                if (item.status === 'approved') statusKo = '구입 예정';
+                if (item.status === 'completed') statusKo = '소장 완료';
+                if (item.status === 'rejected') statusKo = '반려';
+
+                const title = `"${(item.title || '').replace(/"/g, '""')}"`;
+                const author = `"${(item.author || '').replace(/"/g, '""')}"`;
+                const publisher = `"${(item.publisher || '').replace(/"/g, '""')}"`;
+                const cat = `"${(item.categoryName || '').replace(/"/g, '""')}"`;
+
+                csvContent += `${index + 1},${title},${author},${publisher},${cat},${item.requestDate},${statusKo}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `학교도서관_희망도서_신청목록_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            showToast('엑셀(CSV) 파일이 정상적으로 내보내졌습니다.', 'success');
+        }
+
+        function setupEventListeners() {
+            // Target Tabs
+            document.getElementById('targetTabs').addEventListener('click', (e) => {
+                const btn = e.target.closest('.target-tab');
+                if (!btn) return;
+                
+                document.querySelectorAll('.target-tab').forEach(b => {
+                    b.classList.remove('active', 'bg-indigo-600', 'text-white', 'font-semibold');
+                    b.classList.add('text-slate-600', 'font-medium');
+                });
+                btn.classList.add('active', 'bg-indigo-600', 'text-white', 'font-semibold');
+                btn.classList.remove('text-slate-600');
+
+                STATE.target = btn.dataset.target;
+                loadBookData();
+            });
+
+            // Query Type Tabs
+            document.getElementById('queryTypeTabs').addEventListener('click', (e) => {
+                const btn = e.target.closest('.query-tab');
+                if (!btn) return;
+
+                document.querySelectorAll('.query-tab').forEach(b => {
+                    b.classList.remove('active', 'bg-white', 'text-indigo-700', 'shadow-sm', 'font-bold');
+                    b.classList.add('text-slate-600', 'font-medium');
+                });
+                btn.classList.add('active', 'bg-white', 'text-indigo-700', 'shadow-sm', 'font-bold');
+                btn.classList.remove('text-slate-600');
+
+                STATE.queryType = btn.dataset.query;
+                STATE.searchKeyword = '';
+                document.getElementById('searchInput').value = '';
+                loadBookData();
+            });
+
+            // Category Select
+            document.getElementById('categorySelect').addEventListener('change', (e) => {
+                STATE.categoryId = e.target.value;
+                loadBookData();
+            });
+
+            // Search
+            const searchInput = document.getElementById('searchInput');
+            const clearBtn = document.getElementById('clearSearchBtn');
+
+            searchInput.addEventListener('input', (e) => {
+                if (e.target.value.length > 0) clearBtn.classList.remove('hidden');
+                else clearBtn.classList.add('hidden');
+            });
+
+            searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    STATE.searchKeyword = searchInput.value.trim();
+                    loadBookData();
+                }
+            });
+
+            document.getElementById('searchSubmitBtn').addEventListener('click', () => {
+                STATE.searchKeyword = searchInput.value.trim();
+                loadBookData();
+            });
+
+            clearBtn.addEventListener('click', () => {
+                searchInput.value = '';
+                clearBtn.classList.add('hidden');
+                STATE.searchKeyword = '';
+                loadBookData();
+            });
+
+            document.getElementById('refreshBtn').addEventListener('click', loadBookData);
+
+            // Key Modal
+            const modal = document.getElementById('keyModal');
+            document.getElementById('openKeyModalBtn').addEventListener('click', () => {
+                document.getElementById('ttbKeyInput').value = STATE.ttbKey;
+                document.getElementById('nlkKeyInput').value = STATE.nlkKey;
+                modal.classList.remove('hidden');
+            });
+
+            const closeModal = () => modal.classList.add('hidden');
+            document.getElementById('closeKeyModalBtn').addEventListener('click', closeModal);
+            document.getElementById('closeModalSecondaryBtn').addEventListener('click', closeModal);
+
+            document.getElementById('saveKeyBtn').addEventListener('click', () => {
+                const ttbVal = document.getElementById('ttbKeyInput').value.trim();
+                const nlkVal = document.getElementById('nlkKeyInput').value.trim();
+                
+                STATE.ttbKey = ttbVal;
+                STATE.nlkKey = nlkVal;
+
+                if (ttbVal) localStorage.setItem('aladin_ttb_key', ttbVal);
+                else localStorage.removeItem('aladin_ttb_key');
+
+                if (nlkVal) localStorage.setItem('nlk_cert_key', nlkVal);
+                else localStorage.removeItem('nlk_cert_key');
+
+                showToast('인증키 설정이 정상 반영되었습니다!', 'success');
+                closeModal();
+                loadBookData();
+            });
+
+            document.getElementById('clearKeyBtn').addEventListener('click', () => {
+                STATE.ttbKey = '';
+                STATE.nlkKey = '';
+                localStorage.removeItem('aladin_ttb_key');
+                localStorage.removeItem('nlk_cert_key');
+                document.getElementById('ttbKeyInput').value = '';
+                document.getElementById('nlkKeyInput').value = '';
+                showToast('인증키가 삭제되었습니다.', 'info');
+                closeModal();
+                loadBookData();
+            });
+
+            // Wishlist Drawer
+            const drawer = document.getElementById('wishlistDrawer');
+            document.getElementById('openWishlistBtn').addEventListener('click', () => drawer.classList.remove('hidden'));
+            document.getElementById('closeWishlistBtn').addEventListener('click', () => drawer.classList.add('hidden'));
+
+            // Submit Wishlist
+            document.getElementById('exportWishlistBtn').addEventListener('click', submitWishlistToAdmin);
+        }
+
+        function showLoading(show) {
+            const loader = document.getElementById('loadingState');
+            const grid = document.getElementById('bookGrid');
+            if (show) {
+                loader.classList.remove('hidden');
+                grid.classList.add('hidden');
+            } else {
+                loader.classList.add('hidden');
+                grid.classList.remove('hidden');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            let bg = 'bg-slate-900 text-white';
+            if (type === 'success') bg = 'bg-emerald-600 text-white';
+            if (type === 'warning') bg = 'bg-amber-600 text-white';
+
+            toast.className = `${bg} px-4 py-2.5 rounded-xl shadow-xl text-xs font-bold pointer-events-auto flex items-center space-x-2 transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.innerHTML = `<i class="fa-solid fa-circle-info"></i><span>${message}</span>`;
+
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Initialize App on DOM Ready
+        window.addEventListener('DOMContentLoaded', () => {
+            setupEventListeners();
+            updateWishlistUI();
+            loadBookData();
+        });
+    </script>
+</body>
+</html>
