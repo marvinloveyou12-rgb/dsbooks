@@ -1414,6 +1414,36 @@
             updateWishlistUI();
             loadBookData();
         });
+        document.addEventListener('DOMContentLoaded', async () => {
+    // 1. LocalStorage에서 저장된 API 키 불러오기
+    const savedAladdinKey = localStorage.getItem('aladdin_api_key');
+    const savedNLKey = localStorage.getItem('nl_api_key');
+
+    if (savedAladdinKey) {
+        document.getElementById('aladdinApiKeyInput').value = savedAladdinKey;
+    }
+    if (savedNLKey) {
+        document.getElementById('nlApiKeyInput').value = savedNLKey;
+    }
+
+    // 2. GitHub 저장소 내의 default DLS CSV 파일 자동 로드
+    try {
+        const response = await fetch('./data/dls_collection.csv');
+        if (response.ok) {
+            const csvText = await response.text();
+            parseAndSaveDlsData(csvText); // 기존 CSV 파싱 함수 호출
+            console.log("기본 소장 도서 데이터 자동 로드 완료");
+        } else {
+            // 서버에 파일이 없으면 IndexedDB에 저장된 이전 데이터 불러오기
+            loadDlsFromIndexedDB();
+        }
+    } catch (error) {
+        console.log("로컬/저장소 CSV 로드 중 안내:", error);
+        loadDlsFromIndexedDB();
+    }
+});
+
+        
     </script>
 </body>
 </html>
